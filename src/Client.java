@@ -25,6 +25,7 @@ public class Client {
 
         port = Integer.parseInt(args[0]);
 
+        // read in config file which contains port num
         Scanner sc = new Scanner(new File("config.txt"));
         String line = sc.nextLine();
         sc.close();
@@ -34,9 +35,11 @@ public class Client {
             portNums[i] = Integer.parseInt(ports[i]);
         }
 
+
         CreateServerSocket ss = new CreateServerSocket(port);
         ss.start();
 
+        // check if server exists, if exists, connect clients, else wait
         for (int i = 0; i < portNums.length; i++) {
             if (portNums[i] != port) {
                 while (!serverListening("127.0.0.1", portNums[i])) {}
@@ -45,9 +48,8 @@ public class Client {
             }
         }
 
+        // wait for all the clients to come in
         while (readSockets.size() != 2*(portNums.length-1)) {}
-        //System.out.println(writeSockets);
-        //System.out.println(readSockets);
 
         //read
         for (int i = 0; i < readSockets.size(); i++) {
@@ -147,6 +149,11 @@ class SendMoneyThread implements Runnable {
     @Override
     public void run() {
         while (true) {
+            try {
+                sleep(10000);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
             for (int i = 0; i < writeSockets.size(); i++) {
                 Socket clientSocket = writeSockets.get(i);
                 int money = (int) (Math.random() * 50 + 1);
