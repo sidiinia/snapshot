@@ -39,6 +39,6 @@ public class Packet implements Serializable {
 
     @Override
     public String toString() {
-        return String.format("Packet [message=%s, receiving processId=%s, piggyback time=%s]", message, port, money);
+        return String.format("Packet [message=%s", message);
     }
 }
