@@ -178,7 +178,7 @@ class ReadThread implements Runnable {
                     // initiator
                     if (packet.getPort() == Client.port) {
                         System.out.println("Initiator received a marker");
-                        if (Client.channelState.get(packet.getSender()) == 1) {
+                        //if (Client.channelState.get(packet.getSender()) == 1) {
                             Client.channelState.put(packet.getSender(), 2);
                             System.out.println("size: "+Client.channelState.size());
                             boolean finished = true;
@@ -192,9 +192,9 @@ class ReadThread implements Runnable {
                                 // send global states to initiator
                                 System.out.println("(Initiator) Client " + Client.port + " finished snapshot");
                             }
-                        } else {
-                            System.out.println("something went wrong");
-                        }
+                        //} else {
+                        //    System.out.println("something went wrong");
+                        //}
                     }
                     // not initiator
                     else {
@@ -206,6 +206,7 @@ class ReadThread implements Runnable {
                             Client.localState = Client.localBalance;
 
                             System.out.println("(non-initiator) Client " + Client.port + " sends marker to everybody");
+                            packet.setSender(Client.port);
                             for (int i = 0; i < Client.outgoingSockets.size(); i++) {
                                 Socket clientSocket = Client.outgoingSockets.get(i);
                                 try {

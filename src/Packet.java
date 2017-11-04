@@ -35,6 +35,7 @@ public class Packet implements Serializable {
     }
 
     public int getSender() { return sender; }
+    public void setSender(int sender) { this.sender = sender; }
 
     @Override
     public String toString() {
