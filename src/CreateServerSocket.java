@@ -32,7 +32,7 @@ public class CreateServerSocket implements Runnable {
             while (true) {
                 Socket socket = ss.accept();
                 System.out.println("accepted at port " + port + " " + socket);
-                Client.readSockets.add(socket);
+                Client.incomingSockets.add(socket);
                 //start another client thread for each server
                 (new ServerClientThread(socket, clientMap.get(port))).start();
 

@@ -10,11 +10,14 @@ public class Packet implements Serializable {
 
     private int type;
 
-    public Packet(int type, String message, int port, int money) {
+    private int sender;
+
+    public Packet(int type, String message, int port, int money, int sender) {
         this.type = type;
         this.message = message;
         this.port = port;
         this.money = money;
+        this.sender = sender;
     }
 
     public int getType() {return type; }
@@ -30,6 +33,8 @@ public class Packet implements Serializable {
     public int getMoney() {
         return money;
     }
+
+    public int getSender() { return sender; }
 
     @Override
     public String toString() {
