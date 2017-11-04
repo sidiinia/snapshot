@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
 import java.util.Scanner;
+import java.util.concurrent.Semaphore;
 
 import static java.lang.Thread.sleep;
 
@@ -71,6 +72,8 @@ public class Client {
                 clientMessage = br.readLine();
                 if (clientMessage.equals("snapshot")) {
                     // start snapshot
+                    System.out.println("Client " + port + " initiated snapshot");
+                    sendMarker();
                 }
                 else if (!clientMessage.equals("")) {
                     //write(clientMessage);
@@ -100,10 +103,27 @@ public class Client {
                 catch(Exception e){}
         }
     }
+
+    public static void sendMarker() {
+        for (int i = 0; i < writeSockets.size(); i++) {
+            Socket clientSocket = writeSockets.get(i);
+            Packet packet = new Packet(MARKER, "Send Marker from Client " + port, port, 0);
+
+            try {
+                ObjectOutputStream outStream = new ObjectOutputStream(clientSocket.getOutputStream());
+                outStream.writeObject(packet);
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+
+        }
+    }
 }
 
 class ReadThread implements Runnable {
     Socket clientSocket;
+    static int TRANSACTION = 1;
+    static Semaphore semaphore = new Semaphore(1);
     public ReadThread(Socket clientSocket) {
         this.clientSocket = clientSocket;
     }
@@ -117,15 +137,33 @@ class ReadThread implements Runnable {
                 //System.out.println("reading from " + clientSocket);
                 inStream = new ObjectInputStream(clientSocket.getInputStream());
                 packet = (Packet) inStream.readObject();
+                if (packet != null) {
+                    System.out.println(packet.getMessage());
+                }
+                try {
+                    sleep(5000);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+                // handle money transaction
+                if (packet.getType() == TRANSACTION) {
+                    semaphore.acquire();
+                    Client.localBalance += packet.getMoney();
+                    System.out.println("local balance is " + Client.localBalance);
+                    semaphore.release();
+                }
+                // handle marker
+                else {
+
+                }
             } catch (EOFException e) {
                 //System.out.println("here");
             } catch (IOException e) {
                 e.printStackTrace();
             } catch (ClassNotFoundException e) {
                 e.printStackTrace();
-            }
-            if (packet != null) {
-                System.out.println(packet.getMessage());
+            } catch (InterruptedException e) {
+                e.printStackTrace();
             }
         }
     }
@@ -139,6 +177,7 @@ class SendMoneyThread implements Runnable {
 
     static int TRANSACTION = 1;
     static int MARKER = 2;
+    static Semaphore semaphore = new Semaphore(1);
 
     public SendMoneyThread(List<Socket> writeSockets, int port, double pos) {
         this.writeSockets = writeSockets;
@@ -157,6 +196,7 @@ class SendMoneyThread implements Runnable {
             for (int i = 0; i < writeSockets.size(); i++) {
                 Socket clientSocket = writeSockets.get(i);
                 int money = (int) (Math.random() * 50 + 1);
+
                 Packet packet = new Packet(TRANSACTION, "Client " + port + " sent $" + money, port, money);
                 Random rand = new Random();
                 int value = rand.nextInt(100);
@@ -168,14 +208,20 @@ class SendMoneyThread implements Runnable {
                     } catch (IOException e) {
                         e.printStackTrace();
                     }
-                    try {
+                    /*try {
                         sleep(5000);
                     } catch (InterruptedException e) {
                         e.printStackTrace();
-                    }
+                    }*/
                     try {
                         outStream.writeObject(packet);
+                        semaphore.acquire();
+                        Client.localBalance -= money;
+                        System.out.println("local balance is " + Client.localBalance);
+                        semaphore.release();
                     } catch (IOException e) {
+                        e.printStackTrace();
+                    } catch (InterruptedException e) {
                         e.printStackTrace();
                     }
                 }
