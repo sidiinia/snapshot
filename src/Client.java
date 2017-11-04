@@ -15,10 +15,15 @@ public class Client {
 
     // recorded states
     static volatile int localState;
-    static volatile Map<Integer, Queue<Packet>> queueMap = new HashMap<>();
+    static volatile Map<Integer, Map<Integer, Queue<Packet>>> queueMap = new HashMap<>();
+    //                   |              |       |
+    //                  marker #      port     queue
+
 
     // 0 --> no marker, 1 --> first marker, 2 --> subsequent markers
-    static volatile Map<Integer, Integer> channelState = new HashMap<>();
+    static volatile Map<Integer, Map<Integer, Integer>> channelState = new HashMap<>();
+    //                   |              |       |
+    //                  marker #      port     state
 
     static int TRANSACTION = 1;
     static int MARKER = 2;
@@ -47,11 +52,21 @@ public class Client {
         // check if server exists, if exists, connect clients, else wait
         for (int i = 0; i < portNums.length; i++) {
             if (portNums[i] != port) {
-                channelState.put(portNums[i], 0); // initialize channel state map to 0
                 while (!serverListening("127.0.0.1", portNums[i])) {}
                 Socket s = new Socket("127.0.0.1", portNums[i]);
                 outgoingSockets.add(s);
             }
+        }
+
+        // initialize channel state
+        for (int i = 0; i < portNums.length; i++) {
+            Map<Integer, Integer> temp = new HashMap<>();
+            for (int j = 0; j < portNums.length; j++) {
+                //if (i != j) {
+                    temp.put(portNums[j], 0);
+                //}
+            }
+            channelState.put(portNums[i], temp);
         }
 
         // wait for all the clients to come in
@@ -69,7 +84,7 @@ public class Client {
             t.start();
         }
 
-        SendMoneyThread sm = new SendMoneyThread(outgoingSockets, port, 0.2);
+        SendMoneyThread sm = new SendMoneyThread(outgoingSockets, port, 0.5);
         Thread smt = new Thread(sm);
         smt.start();
 
@@ -86,11 +101,14 @@ public class Client {
                     localState = localBalance;
 
                     System.out.println("start recording all incoming channels");
+                    Map<Integer, Integer> temp = channelState.get(port);
                     for (int i = 0; i < portNums.length; i++) {
-                        if (portNums[i] != port) {
-                            channelState.put(portNums[i], 1);
-                        }
+                        //if (portNums[i] != port) {
+                            temp.put(portNums[i], 1);
+                        //}
                     }
+                    channelState.put(port, temp);
+
                     sendMarker();
                 }
                 else if (!clientMessage.equals("")) {
@@ -127,14 +145,15 @@ public class Client {
         for (int i = 0; i < outgoingSockets.size(); i++) {
             Socket clientSocket = outgoingSockets.get(i);
             Packet packet = new Packet(MARKER, "Sent Marker from Client " + port, port, 0, port);
-            System.out.println(packet.getMessage());
+
             try {
                 ObjectOutputStream outStream = new ObjectOutputStream(clientSocket.getOutputStream());
                 outStream.writeObject(packet);
             } catch (IOException e) {
                 e.printStackTrace();
             }
-
+            System.out.println(packet.getMessage());
+            queueMap.put(port, new HashMap<>());
         }
     }
 }
@@ -163,57 +182,72 @@ class ReadThread implements Runnable {
                 }
                 // handle money transaction
                 if (packet.getType() == TRANSACTION) {
-                    System.out.println("A TRANSACTION PACKET");
+                    //System.out.println("A TRANSACTION PACKET");
                     // recording
                     // System.out.println("client state" + Client.channelState.get(packet.getSender()));
-                    if (Client.channelState.get(packet.getSender()) == 1) {
-                        System.out.println("recording..............");
-                        Queue<Packet> q = Client.queueMap.getOrDefault(packet.getSender(), new LinkedList<Packet>());
-                        q.add(packet);
-                        Client.queueMap.put(packet.getSender(), q);
-                        System.out.println(Client.queueMap);
+                    for (Integer i : Client.channelState.keySet()) {
+                        if (packet.getSender() != i && Client.channelState.get(i).get(packet.getSender()) == 1) {
+                            System.out.println("recording..............");
+                            for (Integer initiatorPort : Client.queueMap.keySet()) {
+                                Map<Integer, Queue<Packet>> mq = Client.queueMap.get(initiatorPort);
+                                for (Integer senderPort : mq.keySet()) {
+                                    Queue<Packet> q = mq.get(senderPort);
+                                    q.add(packet);
+                                    mq.put(senderPort, q);
+                                }
+                                Client.queueMap.put(initiatorPort, mq);
+                            }
+                        }
                     }
                     semaphore.acquire();
                     Client.localBalance += packet.getMoney();
-                    System.out.println("local balance is " + Client.localBalance);
+                    System.out.println("received $" + packet.getMoney() + " from Client " + packet.getSender() + ". local balance is " + Client.localBalance);
                     semaphore.release();
                 }
+
                 // handle marker
                 else {
-                    System.out.println("A MARKER PACKET");
+                    //System.out.println("A MARKER PACKET");
+
                     // initiator
                     if (packet.getPort() == Client.port) {
                         System.out.println("Initiator received a marker from " + packet.getSender());
-                        //if (Client.channelState.get(packet.getSender()) == 1) {
-                            semaphore.acquire();
-                            Client.channelState.put(packet.getSender(), 2);
-                            semaphore.release();
-                            //System.out.println("size: "+Client.channelState.size());
-                            boolean finished = true;
-                            for (Map.Entry<Integer, Integer> entry : Client.channelState.entrySet()) {
-                                if (entry.getKey() != Client.port) {
-                                    //System.out.println("channel state is " + entry.getValue());
-                                    finished = finished & (entry.getValue() == 2);
-                                }
+
+                        semaphore.acquire();
+                        Map<Integer, Integer> initiatorChannelState = Client.channelState.get(packet.getPort());
+                        initiatorChannelState.put(packet.getSender(), 2);
+                        Client.channelState.put(packet.getPort(), initiatorChannelState);
+                        semaphore.release();
+                        //System.out.println("size: "+Client.channelState.size());
+                        boolean finished = true;
+                        initiatorChannelState = Client.channelState.get(packet.getPort());
+                        for (Map.Entry<Integer, Integer> entry : initiatorChannelState.entrySet()) {
+                            if (entry.getKey() != Client.port) {
+                                //System.out.println("channel state is " + entry.getValue());
+                                finished = finished & (entry.getValue() == 2);
                             }
-                            if (finished) {
-                                // send global states to initiator
-                                System.out.println("(Initiator) Client " + Client.port + " finished snapshot");
-                                System.out.println("Global state is: ");
-                                System.out.println(Client.queueMap);
-                            }
-                        //} else {
-                        //    System.out.println("something went wrong");
-                        //}
+                        }
+                        if (finished) {
+                            // send global states to initiator
+                            System.out.println("(Initiator) Client " + Client.port + " finished snapshot");
+                            System.out.println("\nGlobal state is: ");
+                            printString(Client.queueMap);
+                        }
                     }
                     // not initiator
                     else {
-                        if (Client.channelState.get(packet.getPort()) == 0) {
+                        Map<Integer, Integer> initiatorChannelState = Client.channelState.get(packet.getPort());
+                        if (initiatorChannelState.get(packet.getPort()) == 0) {
                             System.out.println("receive first marker from port " + packet.getSender() + ", start recording");
-                            Client.queueMap.put(packet.getPort(), new LinkedList<Packet>());
+                            Client.queueMap.put(packet.getPort(), new HashMap<Integer, Queue<Packet>>());
                             // receive first marker, start recording state of this channel
                             semaphore.acquire();
-                            Client.channelState.put(packet.getPort(), 1);
+                            for (int i = 0; i < Client.portNums.length; i++) {
+                                //if (Client.portNums[i] != packet.getPort() && Client.portNums[i] != Client.port) {
+                                    initiatorChannelState.put(Client.portNums[i], 1);
+                                //}
+                            }
+                            Client.channelState.put(packet.getPort(), initiatorChannelState);
                             Client.localState = Client.localBalance;
                             semaphore.release();
 
@@ -228,25 +262,26 @@ class ReadThread implements Runnable {
                                     e.printStackTrace();
                                 }
                             }
-                        } else if (Client.channelState.get(packet.getPort()) == 1) {
+                        } else if (initiatorChannelState.get(packet.getPort()) == 1) {
                             System.out.println("received a marker from port " + packet.getSender());
                             System.out.println("stop recording channel from port " + packet.getSender());
                             semaphore.acquire();
-                            Client.channelState.put(packet.getSender(), 2);
-                            Client.channelState.put(packet.getPort(), 2);
+                            initiatorChannelState.put(Client.port, 2);
+                            initiatorChannelState.put(packet.getSender(), 2);
+                            Client.channelState.put(packet.getPort(), initiatorChannelState);
                             semaphore.release();
                             boolean finished = true;
-                            for (Map.Entry<Integer, Integer> entry : Client.channelState.entrySet()) {
-                                if (entry.getKey() != Client.port) {
-                                    //System.out.println("channel state is " + entry.getValue());
+                            for (Map.Entry<Integer, Integer> entry : initiatorChannelState.entrySet()) {
+                                if (entry.getKey() != packet.getPort()) {
+                                    System.out.println(entry.getKey() + " channel state is " + entry.getValue());
                                     finished = finished & (entry.getValue() == 2);
                                 }
                             }
                             if (finished) {
                                 // send global states to initiator
                                 System.out.println("(Non-initiator) Client " + Client.port + " finished snapshot");
-                                System.out.println("Global state is: ");
-                                System.out.println(Client.queueMap);
+                                System.out.println("\nGlobal state is: ");
+                                printString(Client.queueMap);
                             }
                         }
                     }
@@ -261,6 +296,17 @@ class ReadThread implements Runnable {
                 e.printStackTrace();
             }
         }
+    }
+
+    public void printString(Map<Integer, Map<Integer, Queue<Packet>>> map) {
+        for (Map.Entry<Integer, Map<Integer, Queue<Packet>>> m1 : map.entrySet()) {
+            Map<Integer, Queue<Packet>> mq = m1.getValue();
+            System.out.println("    For initiator marker " + m1.getKey() + ":");
+            for (Map.Entry<Integer, Queue<Packet>> m2 : mq.entrySet()) {
+                System.out.println("        on port " + m2.getKey() + ": " + m2.getValue());
+            }
+        }
+        System.out.println();
     }
 }
 
