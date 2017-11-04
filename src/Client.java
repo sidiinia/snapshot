@@ -218,10 +218,13 @@ class ReadThread implements Runnable {
                             }
                         } else if (Client.channelState.get(packet.getPort()) == 1) {
                             System.out.println("stop recording channel from port " + packet.getPort());
-                            Client.channelState.put(packet.getPort(), 2);
+                            Client.channelState.put(packet.getSender(), 2);
                             boolean finished = true;
-                            for (Integer i : Client.channelState.values()) {
-                                finished = finished & (i == 2);
+                            for (Map.Entry<Integer, Integer> entry : Client.channelState.entrySet()) {
+                                if (entry.getKey() != Client.port) {
+                                    System.out.println("channel state is " + entry.getValue());
+                                    finished = finished & (entry.getValue() == 2);
+                                }
                             }
                             if (finished) {
                                 // send global states to initiator
