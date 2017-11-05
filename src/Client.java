@@ -97,7 +97,7 @@ public class Client {
                 clientMessage = br.readLine();
                 if (clientMessage.equals("snapshot")) {
                     // start snapshot
-                    System.out.println("Client " + port + " initiated snapshot");
+                    System.out.println("\nClient " + port + " initiated snapshot");
                     localState = localBalance;
 
                     System.out.println("start recording all incoming channels");
@@ -153,8 +153,16 @@ public class Client {
                 e.printStackTrace();
             }
             System.out.println(packet.getMessage());
-            queueMap.put(port, new HashMap<>());
         }
+
+        // initialize queueMap
+        Map<Integer, Queue<Packet>> temp = new HashMap<>();
+        for (int i = 0; i < portNums.length; i++) {
+            if (portNums[i] != port) {
+                temp.put(portNums[i], new LinkedList<Packet>());
+            }
+        }
+        queueMap.put(port, temp);
     }
 }
 
@@ -191,9 +199,11 @@ class ReadThread implements Runnable {
                             for (Integer initiatorPort : Client.queueMap.keySet()) {
                                 Map<Integer, Queue<Packet>> mq = Client.queueMap.get(initiatorPort);
                                 for (Integer senderPort : mq.keySet()) {
-                                    Queue<Packet> q = mq.get(senderPort);
-                                    q.add(packet);
-                                    mq.put(senderPort, q);
+                                    if (senderPort == packet.getSender()) {
+                                        Queue<Packet> q = mq.get(senderPort);
+                                        q.add(packet);
+                                        mq.put(senderPort, q);
+                                    }
                                 }
                                 Client.queueMap.put(initiatorPort, mq);
                             }
@@ -232,13 +242,19 @@ class ReadThread implements Runnable {
                             System.out.println("(Initiator) Client " + Client.port + " finished snapshot");
                             System.out.println("\nGlobal state is: ");
                             printString(Client.queueMap);
+                            Client.queueMap.put(Client.port, new HashMap<>());
+                            Map<Integer, Integer> temp = Client.channelState.get(Client.port);
+                            for (int i = 0; i < Client.portNums.length; i++) {
+                                temp.put(Client.portNums[i], 0);
+                            }
+                            Client.channelState.put(Client.port, temp);
                         }
                     }
                     // not initiator
                     else {
                         Map<Integer, Integer> initiatorChannelState = Client.channelState.get(packet.getPort());
                         if (initiatorChannelState.get(packet.getPort()) == 0) {
-                            System.out.println("receive first marker from port " + packet.getSender() + ", start recording");
+                            System.out.println("\nreceive first marker from port " + packet.getSender() + ", start recording");
                             Client.queueMap.put(packet.getPort(), new HashMap<Integer, Queue<Packet>>());
                             // receive first marker, start recording state of this channel
                             semaphore.acquire();
@@ -282,6 +298,12 @@ class ReadThread implements Runnable {
                                 System.out.println("(Non-initiator) Client " + Client.port + " finished snapshot");
                                 System.out.println("\nGlobal state is: ");
                                 printString(Client.queueMap);
+                                Client.queueMap.put(packet.getPort(), new HashMap<>());
+                                Map<Integer, Integer> temp = Client.channelState.get(packet.getPort());
+                                for (int i = 0; i < Client.portNums.length; i++) {
+                                    temp.put(Client.portNums[i], 0);
+                                }
+                                Client.channelState.put(packet.getPort(), temp);
                             }
                         }
                     }
