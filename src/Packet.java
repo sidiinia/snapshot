@@ -4,13 +4,13 @@ public class Packet implements Serializable {
 
     private final String message;
 
-    private final int port;
+    private final int port; // the initiator of the packet
 
     private int money;
 
     private int type;
 
-    private int sender;
+    private int sender; // The last sender of the packet
 
     public Packet(int type, String message, int port, int money, int sender) {
         this.type = type;
