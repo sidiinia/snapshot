@@ -12,12 +12,15 @@ public class Packet implements Serializable {
 
     private int sender;
 
-    public Packet(int type, String message, int port, int money, int sender) {
+    private int markerCounter;
+
+    public Packet(int type, String message, int port, int money, int sender, int markerCounter) {
         this.type = type;
         this.message = message;
         this.port = port;
         this.money = money;
         this.sender = sender;
+        this.markerCounter = markerCounter;
     }
 
     public int getType() {return type; }
@@ -35,6 +38,9 @@ public class Packet implements Serializable {
     }
 
     public int getSender() { return sender; }
+
+    public int getMarkerCounter() { return markerCounter; }
+
     public void setSender(int sender) { this.sender = sender; }
 
     @Override

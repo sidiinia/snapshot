@@ -9,21 +9,21 @@ public class Client {
     static int port;
     static int[] portNums;
     static volatile int localBalance = 1000;
-
+    static volatile int counter = 0;
     static volatile List<Socket> incomingSockets = new ArrayList<>();
     static volatile List<Socket> outgoingSockets = new ArrayList<>();
 
     // recorded states
     static volatile int localState;
-    static volatile Map<Integer, Map<Integer, Queue<Packet>>> queueMap = new HashMap<>();
+    static volatile Map<List<Integer>, Map<Integer, Queue<Packet>>> queueMap = new HashMap<>();
     //                   |              |       |
-    //                  marker #      port     queue
+    //          [initPort, marker#]    port   queue
 
 
     // 0 --> no marker, 1 --> first marker, 2 --> subsequent markers
-    static volatile Map<Integer, Map<Integer, Integer>> channelState = new HashMap<>();
+    static volatile Map<List<Integer>, Map<Integer, Integer>> channelState = new HashMap<>();
     //                   |              |       |
-    //                  marker #      port     state
+    //           [initPort, marker#]   port   state
 
     static int TRANSACTION = 1;
     static int MARKER = 2;
@@ -59,15 +59,15 @@ public class Client {
         }
 
         // initialize channel state
-        for (int i = 0; i < portNums.length; i++) {
+        /*for (int i = 0; i < portNums.length; i++) {
             Map<Integer, Integer> temp = new HashMap<>();
             for (int j = 0; j < portNums.length; j++) {
                 //if (i != j) {
                     temp.put(portNums[j], 0);
                 //}
             }
-            channelState.put(portNums[i], temp);
-        }
+            channelState.put(Arrays.asList(port, counter), temp);
+        }*/
 
         // wait for all the clients to come in
         while (incomingSockets.size() != 2*(portNums.length-1)) {}
@@ -96,20 +96,22 @@ public class Client {
             while (!clientMessage.equals("quit")) {
                 clientMessage = br.readLine();
                 if (clientMessage.equals("snapshot")) {
+                    initChannelState(port, counter);
+                    //System.out.println(channelState);
                     // start snapshot
                     System.out.println("\nClient " + port + " initiated snapshot");
                     localState = localBalance;
-
                     System.out.println("start recording all incoming channels");
-                    Map<Integer, Integer> temp = channelState.get(port);
+                    //System.out.println(port+ " " + counter);
+                    //System.out.println(channelState);
+                    Map<Integer, Integer> temp = channelState.get(Arrays.asList(port, counter));
                     for (int i = 0; i < portNums.length; i++) {
-                        //if (portNums[i] != port) {
-                            temp.put(portNums[i], 1);
-                        //}
+                        temp.put(portNums[i], 1);
                     }
-                    channelState.put(port, temp);
+                    channelState.put(Arrays.asList(port, counter), temp);
 
                     sendMarker();
+                    counter++;
                 }
                 else if (!clientMessage.equals("")) {
                     //write(clientMessage);
@@ -144,7 +146,7 @@ public class Client {
         //System.out.println("size: " + outgoingSockets.size());
         for (int i = 0; i < outgoingSockets.size(); i++) {
             Socket clientSocket = outgoingSockets.get(i);
-            Packet packet = new Packet(MARKER, "Sent Marker from Client " + port, port, 0, port);
+            Packet packet = new Packet(MARKER, "Sent Marker from Client " + port, port, 0, port, counter);
 
             try {
                 ObjectOutputStream outStream = new ObjectOutputStream(clientSocket.getOutputStream());
@@ -162,7 +164,15 @@ public class Client {
                 temp.put(portNums[i], new LinkedList<Packet>());
             }
         }
-        queueMap.put(port, temp);
+        queueMap.put(Arrays.asList(port, counter), temp);
+    }
+
+    public static void initChannelState(int port, int counter) {
+        Map<Integer, Integer> temp = new HashMap<>();
+        for (int j = 0; j < portNums.length; j++) {
+            temp.put(portNums[j], 0);
+        }
+        channelState.put(Arrays.asList(port, counter), temp);
     }
 }
 
@@ -193,10 +203,10 @@ class ReadThread implements Runnable {
                     //System.out.println("A TRANSACTION PACKET");
                     // recording
                     // System.out.println("client state" + Client.channelState.get(packet.getSender()));
-                    for (Integer i : Client.channelState.keySet()) {
-                        if (packet.getSender() != i && Client.channelState.get(i).get(packet.getSender()) == 1) {
+                    for (List<Integer> i : Client.channelState.keySet()) {
+                        if (packet.getSender() != i.get(0) && Client.channelState.get(i).get(packet.getSender()) == 1) {
                             System.out.println("recording..............");
-                            for (Integer initiatorPort : Client.queueMap.keySet()) {
+                            for (List<Integer> initiatorPort : Client.queueMap.keySet()) {
                                 Map<Integer, Queue<Packet>> mq = Client.queueMap.get(initiatorPort);
                                 for (Integer senderPort : mq.keySet()) {
                                     if (senderPort == packet.getSender()) {
@@ -224,13 +234,13 @@ class ReadThread implements Runnable {
                         System.out.println("Initiator received a marker from " + packet.getSender());
 
                         semaphore.acquire();
-                        Map<Integer, Integer> initiatorChannelState = Client.channelState.get(packet.getPort());
+                        Map<Integer, Integer> initiatorChannelState = Client.channelState.get(Arrays.asList(packet.getPort(), packet.getMarkerCounter()));
                         initiatorChannelState.put(packet.getSender(), 2);
-                        Client.channelState.put(packet.getPort(), initiatorChannelState);
+                        Client.channelState.put(Arrays.asList(packet.getPort(), packet.getMarkerCounter()), initiatorChannelState);
                         semaphore.release();
                         //System.out.println("size: "+Client.channelState.size());
                         boolean finished = true;
-                        initiatorChannelState = Client.channelState.get(packet.getPort());
+                        initiatorChannelState = Client.channelState.get(Arrays.asList(packet.getPort(), packet.getMarkerCounter()));
                         for (Map.Entry<Integer, Integer> entry : initiatorChannelState.entrySet()) {
                             if (entry.getKey() != Client.port) {
                                 //System.out.println("channel state is " + entry.getValue());
@@ -242,20 +252,25 @@ class ReadThread implements Runnable {
                             System.out.println("(Initiator) Client " + Client.port + " finished snapshot");
                             System.out.println("\nGlobal state is: ");
                             printString(Client.queueMap);
-                            Client.queueMap.put(Client.port, new HashMap<>());
-                            Map<Integer, Integer> temp = Client.channelState.get(Client.port);
+                            Client.queueMap.put(Arrays.asList(Client.port, packet.getMarkerCounter()), new HashMap<>());
+                            Map<Integer, Integer> temp = Client.channelState.get(Arrays.asList(Client.port, packet.getMarkerCounter()));
                             for (int i = 0; i < Client.portNums.length; i++) {
                                 temp.put(Client.portNums[i], 0);
                             }
-                            Client.channelState.put(Client.port, temp);
+                            Client.channelState.put(Arrays.asList(packet.getPort(), packet.getMarkerCounter()), temp);
                         }
                     }
                     // not initiator
                     else {
-                        Map<Integer, Integer> initiatorChannelState = Client.channelState.get(packet.getPort());
+                        if (Client.channelState.get(Arrays.asList(packet.getPort(), packet.getMarkerCounter())) == null) {
+                            Client.initChannelState(packet.getPort(), packet.getMarkerCounter());
+                        }
+                        System.out.println(Client.channelState);
+                        System.out.println(packet.getPort() + " " + packet.getMarkerCounter() );
+                        Map<Integer, Integer> initiatorChannelState = Client.channelState.get(Arrays.asList(packet.getPort(), packet.getMarkerCounter()));
                         if (initiatorChannelState.get(packet.getPort()) == 0) {
                             System.out.println("\nreceive first marker from port " + packet.getSender() + ", start recording");
-                            Client.queueMap.put(packet.getPort(), new HashMap<Integer, Queue<Packet>>());
+                            Client.queueMap.put(Arrays.asList(packet.getPort(), packet.getMarkerCounter()), new HashMap<Integer, Queue<Packet>>());
                             // receive first marker, start recording state of this channel
                             semaphore.acquire();
                             for (int i = 0; i < Client.portNums.length; i++) {
@@ -263,7 +278,7 @@ class ReadThread implements Runnable {
                                     initiatorChannelState.put(Client.portNums[i], 1);
                                 //}
                             }
-                            Client.channelState.put(packet.getPort(), initiatorChannelState);
+                            Client.channelState.put(Arrays.asList(packet.getPort(), packet.getMarkerCounter()), initiatorChannelState);
                             Client.localState = Client.localBalance;
                             semaphore.release();
 
@@ -284,7 +299,7 @@ class ReadThread implements Runnable {
                             semaphore.acquire();
                             initiatorChannelState.put(Client.port, 2);
                             initiatorChannelState.put(packet.getSender(), 2);
-                            Client.channelState.put(packet.getPort(), initiatorChannelState);
+                            Client.channelState.put(Arrays.asList(packet.getPort(), packet.getMarkerCounter()), initiatorChannelState);
                             semaphore.release();
                             boolean finished = true;
                             for (Map.Entry<Integer, Integer> entry : initiatorChannelState.entrySet()) {
@@ -298,12 +313,12 @@ class ReadThread implements Runnable {
                                 System.out.println("(Non-initiator) Client " + Client.port + " finished snapshot");
                                 System.out.println("\nGlobal state is: ");
                                 printString(Client.queueMap);
-                                Client.queueMap.put(packet.getPort(), new HashMap<>());
-                                Map<Integer, Integer> temp = Client.channelState.get(packet.getPort());
+                                Client.queueMap.put(Arrays.asList(packet.getPort(), packet.getMarkerCounter()), new HashMap<>());
+                                Map<Integer, Integer> temp = Client.channelState.get(Arrays.asList(packet.getPort(), packet.getMarkerCounter()));
                                 for (int i = 0; i < Client.portNums.length; i++) {
                                     temp.put(Client.portNums[i], 0);
                                 }
-                                Client.channelState.put(packet.getPort(), temp);
+                                Client.channelState.put(Arrays.asList(packet.getPort(), packet.getMarkerCounter()), temp);
                             }
                         }
                     }
@@ -320,10 +335,10 @@ class ReadThread implements Runnable {
         }
     }
 
-    public void printString(Map<Integer, Map<Integer, Queue<Packet>>> map) {
-        for (Map.Entry<Integer, Map<Integer, Queue<Packet>>> m1 : map.entrySet()) {
+    public void printString(Map<List<Integer>, Map<Integer, Queue<Packet>>> map) {
+        for (Map.Entry<List<Integer>, Map<Integer, Queue<Packet>>> m1 : map.entrySet()) {
             Map<Integer, Queue<Packet>> mq = m1.getValue();
-            System.out.println("    For initiator marker " + m1.getKey() + ":");
+            System.out.println("    For initiator " + m1.getKey().get(0) + ", marker #" + m1.getKey().get(1) + ":");
             for (Map.Entry<Integer, Queue<Packet>> m2 : mq.entrySet()) {
                 System.out.println("        on port " + m2.getKey() + ": " + m2.getValue());
             }
@@ -360,7 +375,7 @@ class SendMoneyThread implements Runnable {
                 Socket clientSocket = outgoingSockets.get(i);
                 int money = (int) (Math.random() * 50 + 1);
 
-                Packet packet = new Packet(TRANSACTION, "Client " + port + " sent $" + money, port, money, port);
+                Packet packet = new Packet(TRANSACTION, "Client " + port + " sent $" + money, port, money, port, 0);
                 Random rand = new Random();
                 int value = rand.nextInt(100);
                 if (value < 100 * pos) {
