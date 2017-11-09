@@ -204,8 +204,8 @@ class ReadThread implements Runnable {
                     // recording
                     // System.out.println("client state" + Client.channelState.get(packet.getSender()));
                     for (List<Integer> i : Client.channelState.keySet()) {
-                        if (packet.getSender() != i.get(0) && Client.channelState.get(i).get(packet.getSender()) == 1) {
-                            System.out.println("recording..............");
+                        if (packet.getSender() != i.get(0) && packet.getMarkerCounter() == i.get(1) && Client.channelState.get(i).get(packet.getSender()) == 1) {
+                            //System.out.println("recording..............");
                             for (List<Integer> initiatorPort : Client.queueMap.keySet()) {
                                 Map<Integer, Queue<Packet>> mq = Client.queueMap.get(initiatorPort);
                                 for (Integer senderPort : mq.keySet()) {
@@ -252,12 +252,12 @@ class ReadThread implements Runnable {
                             System.out.println("(Initiator) Client " + Client.port + " finished snapshot");
                             System.out.println("\nGlobal state is: ");
                             printString(Client.queueMap);
-                            Client.queueMap.put(Arrays.asList(Client.port, packet.getMarkerCounter()), new HashMap<>());
-                            Map<Integer, Integer> temp = Client.channelState.get(Arrays.asList(Client.port, packet.getMarkerCounter()));
+                            //Client.queueMap.put(Arrays.asList(Client.port, packet.getMarkerCounter()), new HashMap<>());
+                            /*Map<Integer, Integer> temp = Client.channelState.get(Arrays.asList(Client.port, packet.getMarkerCounter()));
                             for (int i = 0; i < Client.portNums.length; i++) {
                                 temp.put(Client.portNums[i], 0);
                             }
-                            Client.channelState.put(Arrays.asList(packet.getPort(), packet.getMarkerCounter()), temp);
+                            Client.channelState.put(Arrays.asList(packet.getPort(), packet.getMarkerCounter()), temp);*/
                         }
                     }
                     // not initiator
@@ -265,8 +265,8 @@ class ReadThread implements Runnable {
                         if (Client.channelState.get(Arrays.asList(packet.getPort(), packet.getMarkerCounter())) == null) {
                             Client.initChannelState(packet.getPort(), packet.getMarkerCounter());
                         }
-                        System.out.println(Client.channelState);
-                        System.out.println(packet.getPort() + " " + packet.getMarkerCounter() );
+                        //System.out.println(Client.channelState);
+                        //System.out.println(packet.getPort() + " " + packet.getMarkerCounter() );
                         Map<Integer, Integer> initiatorChannelState = Client.channelState.get(Arrays.asList(packet.getPort(), packet.getMarkerCounter()));
                         if (initiatorChannelState.get(packet.getPort()) == 0) {
                             System.out.println("\nreceive first marker from port " + packet.getSender() + ", start recording");
@@ -304,7 +304,7 @@ class ReadThread implements Runnable {
                             boolean finished = true;
                             for (Map.Entry<Integer, Integer> entry : initiatorChannelState.entrySet()) {
                                 if (entry.getKey() != packet.getPort()) {
-                                    System.out.println(entry.getKey() + " channel state is " + entry.getValue());
+                                    //System.out.println(entry.getKey() + " channel state is " + entry.getValue());
                                     finished = finished & (entry.getValue() == 2);
                                 }
                             }
@@ -313,12 +313,12 @@ class ReadThread implements Runnable {
                                 System.out.println("(Non-initiator) Client " + Client.port + " finished snapshot");
                                 System.out.println("\nGlobal state is: ");
                                 printString(Client.queueMap);
-                                Client.queueMap.put(Arrays.asList(packet.getPort(), packet.getMarkerCounter()), new HashMap<>());
-                                Map<Integer, Integer> temp = Client.channelState.get(Arrays.asList(packet.getPort(), packet.getMarkerCounter()));
+                                //Client.queueMap.put(Arrays.asList(packet.getPort(), packet.getMarkerCounter()), new HashMap<>());
+                                /*Map<Integer, Integer> temp = Client.channelState.get(Arrays.asList(packet.getPort(), packet.getMarkerCounter()));
                                 for (int i = 0; i < Client.portNums.length; i++) {
                                     temp.put(Client.portNums[i], 0);
                                 }
-                                Client.channelState.put(Arrays.asList(packet.getPort(), packet.getMarkerCounter()), temp);
+                                Client.channelState.put(Arrays.asList(packet.getPort(), packet.getMarkerCounter()), temp);*/
                             }
                         }
                     }
